@@ -6,7 +6,7 @@ pub struct SingleEmptyLineBeforeBody {}
 
 impl Rule for SingleEmptyLineBeforeBody {
     fn check(&self, commit: &Commit) -> Result<(), SingleError> {
-        let content = commit.commit_string;
+        let content = commit.get_commit_string();
         let Some((header, body)) = content.split_once('\n') else {
             return Ok(());
         };
