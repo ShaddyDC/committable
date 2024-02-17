@@ -1,34 +1,11 @@
-use miette::{Diagnostic, SourceOffset, SourceSpan};
+mod rules;
+
+use miette::Diagnostic;
+use rules::{
+    non_empty_body::NonEmptyBody, non_empty_header::NonEmptyHeader,
+    single_empty_line_before_body::SingleEmptyLineBeforeBody, Rule, SingleError,
+};
 use thiserror::Error;
-
-#[derive(Debug, Error, Diagnostic, PartialEq, Eq)]
-#[error("{error_type:?}")]
-#[diagnostic()]
-pub struct SingleError {
-    error_type: ErrorType,
-    #[label("{error_type}")]
-    bad_bit: SourceSpan,
-}
-
-// Define a global enum for error types
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum ErrorType {
-    #[error("header is empty")]
-    NonEmptyHeader,
-    #[error("body is empty")]
-    NonEmptyBody,
-    #[error("there is not exactly one empty line before body")]
-    SingleEmptyLineBeforeBody,
-}
-
-impl SingleError {
-    fn new(error_type: ErrorType, start: SourceOffset, length: usize) -> Self {
-        Self {
-            error_type,
-            bad_bit: SourceSpan::new(start, length),
-        }
-    }
-}
 
 #[derive(Debug, Error, Diagnostic, PartialEq, Eq)]
 #[error("{} error(s)", others.len())]
@@ -109,81 +86,6 @@ pub fn check_all_rules(commit: &Commit) -> Result<(), GroupError> {
     )
 }
 
-trait Rule {
-    fn check(&self, commit: &Commit) -> Result<(), SingleError>;
-}
-
-struct NonEmptyHeader {}
-impl Rule for NonEmptyHeader {
-    fn check(&self, commit: &Commit) -> Result<(), SingleError> {
-        if commit.get_header().trim().is_empty() {
-            Err(SingleError::new(
-                ErrorType::NonEmptyHeader,
-                0.into(),
-                commit.get_header().len(),
-            ))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-struct NonEmptyBody {}
-impl Rule for NonEmptyBody {
-    fn check(&self, commit: &Commit) -> Result<(), SingleError> {
-        let message = commit.get_commit_string();
-        let Some((header, body)) = message.split_once('\n') else {
-            return Ok(());
-        };
-
-        if !body.is_empty() && commit.get_body().is_none() {
-            Err(SingleError::new(
-                ErrorType::NonEmptyBody,
-                (header.len() + 1).into(),
-                body.len(),
-            ))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-struct SingleEmptyLineBeforeBody {}
-
-impl Rule for SingleEmptyLineBeforeBody {
-    fn check(&self, commit: &Commit) -> Result<(), SingleError> {
-        let content = commit.commit_string;
-        let Some((header, body)) = content.split_once('\n') else {
-            return Ok(());
-        };
-
-        if !body.is_empty() && !body.starts_with('\n') && !body.starts_with("\r\n") {
-            let line_len = body.find('\n').unwrap_or(body.len());
-            return Err(SingleError::new(
-                ErrorType::SingleEmptyLineBeforeBody,
-                (header.len() + 1).into(),
-                line_len,
-            ));
-        }
-
-        let (first_line, rest) = body.split_once('\n').unwrap_or(("", body));
-
-        if rest.starts_with('\n') || rest.starts_with("\r\n") {
-            let Some(len) = rest.find(|c| c != '\n' && c != '\r') else {
-                // No body, so skip warning
-                return Ok(());
-            };
-            return Err(SingleError::new(
-                ErrorType::SingleEmptyLineBeforeBody,
-                (header.len() + 1 + first_line.len()).into(),
-                len,
-            ));
-        }
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,77 +120,5 @@ mod tests {
         assert_eq!(c.get_commit_string(), "Hello world\n\nSome Body");
         assert_eq!(c.get_header(), "Hello world");
         assert_eq!(c.get_body(), Some("Some Body"));
-    }
-
-    #[test]
-    fn nonempty_header() {
-        let c = NonEmptyHeader {};
-        assert_eq!(
-            c.check(&Commit::new("")),
-            Err(SingleError::new(ErrorType::NonEmptyHeader, 0.into(), 0))
-        );
-        assert_eq!(
-            c.check(&Commit::new("\nTest")),
-            Err(SingleError::new(ErrorType::NonEmptyHeader, 0.into(), 0))
-        );
-        assert_eq!(
-            c.check(&Commit::new("\n\nTest")),
-            Err(SingleError::new(ErrorType::NonEmptyHeader, 0.into(), 0))
-        );
-        assert_eq!(
-            c.check(&Commit::new("  \nTest")),
-            Err(SingleError::new(ErrorType::NonEmptyHeader, 0.into(), 2))
-        );
-        assert_eq!(c.check(&Commit::new("YEP\n\nTest")), Ok(()));
-        assert_eq!(c.check(&Commit::new("YEP")), Ok(()));
-    }
-
-    #[test]
-    fn nonempty_body() {
-        let c = NonEmptyBody {};
-        assert_eq!(c.check(&Commit::new("H")), Ok(()));
-        assert_eq!(c.check(&Commit::new("H\n")), Ok(()));
-        assert_eq!(c.check(&Commit::new("H\n\nTest")), Ok(()));
-        assert_eq!(c.check(&Commit::new("H\n\n\nTest")), Ok(()));
-        assert_eq!(c.check(&Commit::new("H\nYEP\n\nTest")), Ok(()));
-        assert_eq!(c.check(&Commit::new("H\nYEP")), Ok(()));
-        assert_eq!(
-            c.check(&Commit::new("H\n\n")),
-            Err(SingleError::new(ErrorType::NonEmptyBody, 2.into(), 1))
-        );
-    }
-
-    #[test]
-    fn single_empty_line_before_body() {
-        let c = SingleEmptyLineBeforeBody {};
-        assert_eq!(c.check(&Commit::new("H")), Ok(()));
-        assert_eq!(c.check(&Commit::new("H\n")), Ok(()));
-        assert_eq!(c.check(&Commit::new("H\n\nTest")), Ok(()));
-        assert_eq!(
-            c.check(&Commit::new("H\n\n\nTest")),
-            Err(SingleError::new(
-                ErrorType::SingleEmptyLineBeforeBody,
-                2.into(),
-                1
-            ))
-        );
-        assert_eq!(
-            c.check(&Commit::new("H\nYEP\n\nTest")),
-            Err(SingleError::new(
-                ErrorType::SingleEmptyLineBeforeBody,
-                2.into(),
-                3
-            ))
-        );
-        assert_eq!(
-            c.check(&Commit::new("H\nYEP")),
-            Err(SingleError::new(
-                ErrorType::SingleEmptyLineBeforeBody,
-                2.into(),
-                3
-            ))
-        );
-        assert_eq!(c.check(&Commit::new("H\n\n\n")), Ok(()));
-        assert_eq!(c.check(&Commit::new("H\n\nNice!\n\n")), Ok(()));
     }
 }
