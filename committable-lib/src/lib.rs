@@ -4,8 +4,9 @@ mod rules;
 use commit::Commit;
 use miette::Diagnostic;
 use rules::{
-    non_empty_body::NonEmptyBody, non_empty_header::NonEmptyHeader,
-    single_empty_line_before_body::SingleEmptyLineBeforeBody, Rule, SingleError,
+    body_length::BodyLength, header_length::HeaderLength, non_empty_body::NonEmptyBody,
+    non_empty_header::NonEmptyHeader, single_empty_line_before_body::SingleEmptyLineBeforeBody,
+    Rule, SingleError,
 };
 use thiserror::Error;
 
@@ -46,6 +47,8 @@ pub fn check_all_rules(commit: &Commit) -> Result<(), GroupError> {
             Box::new(NonEmptyHeader {}),
             Box::new(NonEmptyBody {}),
             Box::new(SingleEmptyLineBeforeBody {}),
+            Box::new(HeaderLength {}),
+            Box::new(BodyLength {}),
         ],
     )
 }

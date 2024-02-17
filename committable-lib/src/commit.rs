@@ -34,6 +34,12 @@ impl<'a> Commit<'a> {
             Some(body)
         }
     }
+
+    pub fn body_offset(&self) -> Option<usize> {
+        // TODO Relatively expensive
+        self.get_body()
+            .map(|b| self.get_commit_string().len() - b.len())
+    }
 }
 
 #[cfg(test)]

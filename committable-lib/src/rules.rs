@@ -3,6 +3,8 @@ use thiserror::Error;
 
 use crate::Commit;
 
+pub mod body_length;
+pub mod header_length;
 pub mod non_empty_body;
 pub mod non_empty_header;
 pub mod single_empty_line_before_body;
@@ -28,6 +30,10 @@ pub enum ErrorType {
     NonEmptyBody,
     #[error("there is not exactly one empty line before body")]
     SingleEmptyLineBeforeBody,
+    #[error("header is too long")]
+    HeaderLength,
+    #[error("body line is too long")]
+    BodyLength,
 }
 
 impl SingleError {
