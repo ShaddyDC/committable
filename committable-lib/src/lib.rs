@@ -169,11 +169,14 @@ impl Rule for SingleEmptyLineBeforeBody {
         let (first_line, rest) = body.split_once('\n').unwrap_or(("", body));
 
         if rest.starts_with('\n') || rest.starts_with("\r\n") {
-            let line_len = rest.find('\n').unwrap_or(rest.len());
+            let Some(len) = rest.find(|c| c != '\n' && c != '\r') else {
+                // No body, so skip warning
+                return Ok(());
+            };
             return Err(SingleError::new(
                 ErrorType::SingleEmptyLineBeforeBody,
                 (header.len() + 1 + first_line.len()).into(),
-                line_len,
+                len,
             ));
         }
 
@@ -266,7 +269,7 @@ mod tests {
             Err(SingleError::new(
                 ErrorType::SingleEmptyLineBeforeBody,
                 2.into(),
-                0 // TODO should ideally be 1
+                1
             ))
         );
         assert_eq!(
@@ -285,6 +288,7 @@ mod tests {
                 3
             ))
         );
+        assert_eq!(c.check(&Commit::new("H\n\n\n")), Ok(()));
         assert_eq!(c.check(&Commit::new("H\n\nNice!\n\n")), Ok(()));
     }
 }
